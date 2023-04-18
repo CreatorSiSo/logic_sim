@@ -1,56 +1,75 @@
 use bevy::{
 	core_pipeline::clear_color::ClearColorConfig,
-	math::Vec3Swizzles,
-	prelude::{shape::Circle, *},
-	sprite::MaterialMesh2dBundle,
+	math::{vec2, vec3},
+	prelude::*,
 };
-use petgraph::{graph::NodeIndex, Directed};
+use bevy_prototype_lyon::prelude::*;
+use petgraph::prelude::*;
 
-type Graph = petgraph::Graph<LogicNode, (), Directed>;
+mod sim {
+	use bevy::prelude::Vec2;
+	use petgraph::Directed;
 
-#[derive(Debug)]
-enum LogicNode {
-	In(InputNode),
-	Void,
-}
+	pub type Graph = petgraph::Graph<LogicNode, (), Directed>;
+	pub type NodeIndex = petgraph::graph::NodeIndex;
+	pub type EdgeIndex = petgraph::graph::EdgeIndex;
 
-#[derive(Debug)]
-struct InputNode {
-	state: bool,
-	pos: Vec2,
-}
-
-impl InputNode {
-	fn new(state: bool, pos: Vec2) -> Self {
-		Self { state, pos }
+	#[derive(Debug)]
+	pub enum LogicNode {
+		In(InputNode),
+		Void,
 	}
+
+	impl From<InputNode> for LogicNode {
+		fn from(input_node: InputNode) -> Self {
+			Self::In(input_node)
+		}
+	}
+
+	#[derive(Debug)]
+	pub struct InputNode {
+		pub state: bool,
+		pub pos: Vec2,
+	}
+
+	impl InputNode {
+		pub fn new(state: bool, pos: Vec2) -> Self {
+			Self { state, pos }
+		}
+	}
+}
+
+use sim::{EdgeIndex, Graph, InputNode, LogicNode, NodeIndex};
+
+fn main() {
+	App::new()
+		.add_plugins(DefaultPlugins)
+		.add_plugin(ShapePlugin)
+		.add_startup_system(setup)
+		.add_system(update_cursor)
+		.add_system(update_graph)
+		.add_system(render_nodes)
+		.add_system(render_edges)
+		.run();
 }
 
 #[derive(Component, Debug)]
 struct GraphWrapper(Graph);
 
 #[derive(Component, Debug)]
-struct NodeSocket {
+struct NodePart {
 	index: NodeIndex,
 }
 
-fn main() {
-	App::new()
-		.add_plugins(DefaultPlugins)
-		.add_startup_system(setup)
-		.add_system(update_cursor)
-		.add_system(update_graph)
-		.add_system(render_nodes)
-		.run();
+#[derive(Component, Debug)]
+struct EdgePart {
+	index: EdgeIndex,
 }
 
-#[derive(Debug, Resource)]
-struct MaterialHandles {
-	node_bg: Handle<ColorMaterial>,
-	node_bg_hovered: Handle<ColorMaterial>,
-	node_bg_focused: Handle<ColorMaterial>,
-	active: Handle<ColorMaterial>,
-}
+const COLOR_NODE_BG: Color = Color::rgb(0.2, 0.2, 0.2);
+const COLOR_NODE_BG_HOVERED: Color = Color::rgb(0.15, 0.15, 0.15);
+const COLOR_NODE_BG_FOCUSED: Color = Color::rgb(0.3, 0.3, 0.3);
+const COLOR_ACTIVE: Color = Color::rgb(1.0, 0.1, 0.1);
 
 #[derive(Debug, Component)]
 struct MainCamera;
@@ -60,24 +79,12 @@ struct WorldCursor {
 	pos: Option<Vec2>,
 }
 
-fn setup(mut commands: Commands, mut materials: ResMut<Assets<ColorMaterial>>) {
+fn setup(mut commands: Commands) {
 	let mut graph = Graph::default();
-	let in_1 = graph.add_node(LogicNode::In(InputNode::new(
-		false,
-		Vec2::new(0.0, 3.2 + 0.4),
-	)));
-	let in_2 = graph.add_node(LogicNode::In(InputNode::new(
-		false,
-		Vec2::new(0.0, 1.0 + 0.2),
-	)));
-	let in_3 = graph.add_node(LogicNode::In(InputNode::new(
-		false,
-		Vec2::new(0.0, -1.0 - 0.2),
-	)));
-	let in_4 = graph.add_node(LogicNode::In(InputNode::new(
-		false,
-		Vec2::new(0.0, -3.2 - 0.4),
-	)));
+	let in_1 = graph.add_node(InputNode::new(false, Vec2::new(0.0, 3.2 + 0.4)).into());
+	let in_2 = graph.add_node(InputNode::new(false, Vec2::new(0.0, 1.0 + 0.2)).into());
+	let in_3 = graph.add_node(InputNode::new(false, Vec2::new(0.0, -1.0 - 0.2)).into());
+	let in_4 = graph.add_node(InputNode::new(false, Vec2::new(0.0, -3.2 - 0.4)).into());
 
 	let node_2 = graph.add_node(LogicNode::Void);
 
@@ -98,13 +105,7 @@ fn setup(mut commands: Commands, mut materials: ResMut<Assets<ColorMaterial>>) {
 		},
 	));
 
-	commands.insert_resource(MaterialHandles {
-		node_bg: materials.add(ColorMaterial::from(Color::rgb(0.2, 0.2, 0.2))),
-		node_bg_hovered: materials.add(ColorMaterial::from(Color::rgb(0.15, 0.15, 0.15))),
-		node_bg_focused: materials.add(ColorMaterial::from(Color::rgb(0.3, 0.3, 0.3))),
-		active: materials.add(ColorMaterial::from(Color::rgb(1.0, 0.1, 0.1))),
-	});
-	commands.insert_resource(WorldCursor { pos: None })
+	commands.insert_resource(WorldCursor { pos: None });
 }
 
 fn update_cursor(
@@ -139,52 +140,122 @@ fn render_nodes(
 	world_cursor: Res<WorldCursor>,
 	mouse_buttons: Res<Input<MouseButton>>,
 	mut graph: Query<&mut GraphWrapper>,
-	mut node_sockets: Query<(&mut NodeSocket, &mut Transform, &mut Handle<ColorMaterial>)>,
-	mut meshes: ResMut<Assets<Mesh>>,
-	materials: Res<MaterialHandles>,
+	mut node_sockets: Query<(&mut NodePart, &mut Path, &mut Fill)>,
 ) {
 	let graph = &mut graph.single_mut().0;
-	// node_sockets
-	// 	.iter()
-	// 	.inspect(|n| println!("{n:?}"))
-	// 	.for_each(drop);
 
 	let indices: Vec<NodeIndex> = graph.node_indices().collect();
 	for (weight, index) in graph.node_weights_mut().zip(indices) {
 		match weight {
-			LogicNode::In(InputNode { pos, state }) => {
-				let Some((_, mut transform, mut material)) = node_sockets
+			LogicNode::In(InputNode {
+				pos: node_pos,
+				state,
+			}) => {
+				let Some((_, mut path, mut fill)) = node_sockets
 					.iter_mut()
 					.find(|(node_socket, ..)| node_socket.index == index)
 				else {
 					commands.spawn((
-						NodeSocket { index },
-						MaterialMesh2dBundle {
-							mesh: meshes.add(Circle::new(1.0).into()).into(),
-							material: materials.node_bg.clone(),
-							transform: Transform::from_translation(Vec3::new(pos.x, pos.y, 0.0)),
+						NodePart { index },
+						ShapeBundle {
+							path: GeometryBuilder::build_as(&shapes::Circle { radius: 1.0, center: *node_pos }),
 							..default()
 						},
+						Fill {
+							options: FillOptions::tolerance(0.05),
+							color: COLOR_NODE_BG
+						}
 					));
 					continue;
 				};
 
-				transform.translation.x = pos.x;
-				transform.translation.y = pos.y;
+				*path = GeometryBuilder::build_as(&shapes::Circle {
+					radius: 1.0,
+					center: *node_pos,
+				});
 
 				let hovered = world_cursor
 					.pos
-					.map_or(false, |pos| pos.distance(transform.translation.xy()) < 1.0);
+					.map_or(false, |cursor_pos| cursor_pos.distance(*node_pos) < 1.0);
+
 				if hovered && mouse_buttons.just_released(MouseButton::Left) {
 					*state = !*state;
 				}
-				*material = match (*state, hovered) {
-					(true, true) | (true, false) => materials.active.clone(),
-					(false, true) => materials.node_bg_hovered.clone(),
-					(false, false) => materials.node_bg.clone(),
+
+				fill.color = match (*state, hovered) {
+					(true, true) | (true, false) => COLOR_ACTIVE,
+					(false, true) => COLOR_NODE_BG_HOVERED,
+					(false, false) => COLOR_NODE_BG,
 				};
 			}
 			LogicNode::Void => {}
 		}
 	}
+}
+
+fn render_edges(
+	mut commands: Commands,
+	world_cursor: Res<WorldCursor>,
+	// mouse_buttons: Res<Input<MouseButton>>,
+	mut graph: Query<&mut GraphWrapper>,
+	mut query: Query<(&mut EdgePart, &mut Path, &mut Stroke)>,
+) {
+	let graph = &mut graph.single_mut().0;
+
+	let start_indices: Vec<NodeIndex> = graph
+		.node_indices()
+		.zip(graph.node_weights())
+		.filter_map(|(index, node)| matches!(node, LogicNode::In(_)).then_some(index))
+		.collect();
+
+	for start_index in start_indices {
+		let mut visitor = petgraph::visit::Dfs::new(&*graph, start_index);
+		while let Some(index) = visitor.next(&*graph) {
+			for edge in graph.edges(index) {
+				let index = edge.id();
+				let source = graph.node_weight(edge.source()).unwrap();
+				// let target = graph.node_weight(edge.target()).unwrap();
+
+				let source_pos = match source {
+					LogicNode::In(input_node) => input_node.pos,
+					LogicNode::Void => panic!(),
+				};
+				// let target_pos = match target {
+				// 	LogicNode::In(input_node) => input_node.pos,
+				// 	LogicNode::Void => Vec2::new(10.0, 10.0),
+				// };
+				let mouse_pos = world_cursor.pos.unwrap_or(vec2(0.0, 0.0));
+
+				if let Some((_, mut path, _)) = query
+					.iter_mut()
+					.find(|(edge_part, ..)| edge_part.index == index)
+				{
+					*path = edge_path(source_pos, mouse_pos);
+				} else {
+					commands.spawn((
+						EdgePart { index },
+						ShapeBundle {
+							path: edge_path(source_pos, mouse_pos),
+							transform: Transform::from_translation(vec3(0.0, 0.0, -1.0)),
+							..default()
+						},
+						Stroke {
+							options: StrokeOptions::DEFAULT
+								.with_line_cap(LineCap::Round)
+								.with_line_width(0.5),
+							color: COLOR_NODE_BG_FOCUSED,
+						},
+					));
+					continue;
+				};
+			}
+		}
+	}
+}
+
+fn edge_path(start_pos: Vec2, end_pos: Vec2) -> Path {
+	let mut path_builder = PathBuilder::new();
+	path_builder.move_to(start_pos);
+	path_builder.line_to(end_pos);
+	path_builder.build()
 }
