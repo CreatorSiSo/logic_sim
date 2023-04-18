@@ -62,10 +62,22 @@ struct WorldCursor {
 
 fn setup(mut commands: Commands, mut materials: ResMut<Assets<ColorMaterial>>) {
 	let mut graph = Graph::default();
-	let in_1 = graph.add_node(LogicNode::In(InputNode::new(false, Vec2::new(0.0, 90.0))));
-	let in_2 = graph.add_node(LogicNode::In(InputNode::new(false, Vec2::new(0.0, 60.0))));
-	let in_3 = graph.add_node(LogicNode::In(InputNode::new(false, Vec2::new(0.0, 30.0))));
-	let in_4 = graph.add_node(LogicNode::In(InputNode::new(false, Vec2::new(0.0, 0.0))));
+	let in_1 = graph.add_node(LogicNode::In(InputNode::new(
+		false,
+		Vec2::new(0.0, 3.2 + 0.4),
+	)));
+	let in_2 = graph.add_node(LogicNode::In(InputNode::new(
+		false,
+		Vec2::new(0.0, 1.0 + 0.2),
+	)));
+	let in_3 = graph.add_node(LogicNode::In(InputNode::new(
+		false,
+		Vec2::new(0.0, -1.0 - 0.2),
+	)));
+	let in_4 = graph.add_node(LogicNode::In(InputNode::new(
+		false,
+		Vec2::new(0.0, -3.2 - 0.4),
+	)));
 
 	let node_2 = graph.add_node(LogicNode::Void);
 
@@ -81,6 +93,7 @@ fn setup(mut commands: Commands, mut materials: ResMut<Assets<ColorMaterial>>) {
 			camera_2d: Camera2d {
 				clear_color: ClearColorConfig::Custom(Color::rgb(0.1, 0.1, 0.1)),
 			},
+			transform: Transform::from_scale(Vec3::new(0.1, 0.1, 1.0)),
 			..default()
 		},
 	));
@@ -114,7 +127,7 @@ fn update_graph(mut graph: Query<&mut GraphWrapper>) {
 	for weight in graph.node_weights_mut() {
 		match weight {
 			LogicNode::In(InputNode { pos, .. }) => {
-				*pos += Vec2::new(0.1, 0.0);
+				// *pos += Vec2::new(0.1, 0.0);
 			}
 			LogicNode::Void => {}
 		}
@@ -145,7 +158,7 @@ fn render_nodes(
 					commands.spawn((
 						NodeSocket { index },
 						MaterialMesh2dBundle {
-							mesh: meshes.add(Circle::new(10.).into()).into(),
+							mesh: meshes.add(Circle::new(1.0).into()).into(),
 							material: materials.node_bg.clone(),
 							transform: Transform::from_translation(Vec3::new(pos.x, pos.y, 0.0)),
 							..default()
@@ -160,7 +173,7 @@ fn render_nodes(
 				dbg!(&world_cursor);
 				if world_cursor
 					.pos
-					.map_or(false, |pos| pos.distance(transform.translation.xy()) < 10.0)
+					.map_or(false, |pos| pos.distance(transform.translation.xy()) < 1.0)
 				{
 					*material = materials.node_bg_hovered.clone();
 					println!("updated");
