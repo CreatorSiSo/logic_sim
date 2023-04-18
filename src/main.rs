@@ -137,20 +137,22 @@ fn update_graph(mut graph: Query<&mut GraphWrapper>) {
 fn render_nodes(
 	mut commands: Commands,
 	world_cursor: Res<WorldCursor>,
-	graph: Query<&GraphWrapper>,
+	mouse_buttons: Res<Input<MouseButton>>,
+	mut graph: Query<&mut GraphWrapper>,
 	mut node_sockets: Query<(&mut NodeSocket, &mut Transform, &mut Handle<ColorMaterial>)>,
 	mut meshes: ResMut<Assets<Mesh>>,
 	materials: Res<MaterialHandles>,
 ) {
-	let graph = &graph.single().0;
+	let graph = &mut graph.single_mut().0;
 	// node_sockets
 	// 	.iter()
 	// 	.inspect(|n| println!("{n:?}"))
 	// 	.for_each(drop);
 
-	for (weight, index) in graph.node_weights().zip(graph.node_indices()) {
+	let indices: Vec<NodeIndex> = graph.node_indices().collect();
+	for (weight, index) in graph.node_weights_mut().zip(indices) {
 		match weight {
-			LogicNode::In(InputNode { pos, .. }) => {
+			LogicNode::In(InputNode { pos, state }) => {
 				let Some((_, mut transform, mut material)) = node_sockets
 					.iter_mut()
 					.find(|(node_socket, ..)| node_socket.index == index)
@@ -170,16 +172,17 @@ fn render_nodes(
 				transform.translation.x = pos.x;
 				transform.translation.y = pos.y;
 
-				dbg!(&world_cursor);
-				if world_cursor
+				let hovered = world_cursor
 					.pos
-					.map_or(false, |pos| pos.distance(transform.translation.xy()) < 1.0)
-				{
-					*material = materials.node_bg_hovered.clone();
-					println!("updated");
-				} else {
-					*material = materials.node_bg.clone();
+					.map_or(false, |pos| pos.distance(transform.translation.xy()) < 1.0);
+				if hovered && mouse_buttons.just_released(MouseButton::Left) {
+					*state = !*state;
 				}
+				*material = match (*state, hovered) {
+					(true, true) | (true, false) => materials.active.clone(),
+					(false, true) => materials.node_bg_hovered.clone(),
+					(false, false) => materials.node_bg.clone(),
+				};
 			}
 			LogicNode::Void => {}
 		}

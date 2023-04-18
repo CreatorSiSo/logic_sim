@@ -37,3 +37,9 @@ features = [
 	"wayland",
 	# "zstd",
 ]
+
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.dev]
+opt-level = 1
