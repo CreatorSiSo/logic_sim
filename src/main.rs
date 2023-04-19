@@ -2,10 +2,9 @@ use bevy::{
 	core_pipeline::clear_color::ClearColorConfig,
 	math::{vec2, vec3},
 	prelude::*,
+	ui::FocusPolicy,
 };
-use bevy_mod_picking::{
-	HoverEvent, PickableBundle, PickingCameraBundle, PickingEvent, SelectionEvent,
-};
+use bevy_mod_picking::{HoverEvent, NoDeselect, PickableBundle, PickingCameraBundle, PickingEvent};
 use bevy_prototype_lyon::prelude::*;
 use petgraph::prelude::*;
 
@@ -106,7 +105,7 @@ fn setup(mut commands: Commands) {
 	commands.insert_resource(WorldCursor { pos: None });
 	commands.spawn((
 		MainCamera,
-		PickingCameraBundle::default(),
+		PickingCameraBundle { ..default() },
 		Camera2dBundle {
 			camera_2d: Camera2d {
 				clear_color: ClearColorConfig::Custom(Color::rgb(0.1, 0.1, 0.1)),
@@ -136,7 +135,7 @@ fn update_graph(mut graph: Query<&mut GraphWrapper>) {
 
 	for weight in graph.node_weights_mut() {
 		match weight {
-			LogicNode::In(InputNode { pos, .. }) => {
+			LogicNode::In(InputNode { .. }) => {
 				// *pos += Vec2::new(0.1, 0.0);
 			}
 			LogicNode::Void => {}
@@ -151,31 +150,48 @@ fn interactions(
 ) {
 	let graph = &mut graph.single_mut().0;
 
-	for event in events.iter() {
-		match event {
-			PickingEvent::Selection(_) => {}
-			PickingEvent::Hover(hover_event) => match hover_event {
-				HoverEvent::JustEntered(entity) => {
-					let (_, mut fill) = nodes.get_mut(*entity).unwrap();
-					fill.color = COLOR_NODE_BG_HOVERED;
-				}
-				HoverEvent::JustLeft(entity) => {
-					// TODO Remove hover_bg only if not active
-					let (_, mut fill) = nodes.get_mut(*entity).unwrap();
-					fill.color = COLOR_NODE_BG;
-				}
-			},
-			PickingEvent::Clicked(entity) => {
-				let (node_link, mut fill) = nodes.get_mut(*entity).unwrap();
-				match graph.node_weight_mut(node_link.index).unwrap() {
-					LogicNode::In(InputNode { state, .. }) => {
-						*state = !*state;
-						fill.color = if *state { COLOR_ACTIVE } else { COLOR_NODE_BG };
+	fn get_data_mut<'a>(
+		graph: &'a mut Graph,
+		nodes: &'a mut Query<(&mut NodeLink, &mut Fill)>,
+		entity: &Entity,
+	) -> (&'a mut LogicNode, Mut<'a, Fill>) {
+		let (node_link, fill) = nodes.get_mut(*entity).unwrap();
+		(graph.node_weight_mut(node_link.index).unwrap(), fill)
+	}
+
+	let Some(event) = events.iter().next() else {
+		return;
+	};
+
+	// TODO figure out why events are sometimes received twice
+
+	match event {
+		PickingEvent::Hover(hover_event) => match hover_event {
+			HoverEvent::JustEntered(entity) => {
+				let (node, mut fill) = get_data_mut(graph, &mut nodes, entity);
+				if let LogicNode::In(InputNode { state, .. }) = node {
+					if !*state {
+						fill.color = COLOR_NODE_BG_HOVERED;
 					}
-					LogicNode::Void => {}
 				}
 			}
+			HoverEvent::JustLeft(entity) => {
+				let (node, mut fill) = get_data_mut(graph, &mut nodes, entity);
+				if let LogicNode::In(InputNode { state, .. }) = node {
+					if !*state {
+						fill.color = COLOR_NODE_BG;
+					}
+				}
+			}
+		},
+		PickingEvent::Clicked(entity) => {
+			let (node, mut fill) = get_data_mut(graph, &mut nodes, entity);
+			if let LogicNode::In(InputNode { state, .. }) = node {
+				*state = !*state;
+				fill.color = if *state { COLOR_ACTIVE } else { COLOR_NODE_BG };
+			}
 		}
+		_ => {}
 	}
 }
 
@@ -190,29 +206,36 @@ fn render_nodes(
 	for (weight, index) in graph.node_weights_mut().zip(indices) {
 		match weight {
 			LogicNode::In(InputNode { pos: node_pos, .. }) => {
-				let Some((_, mut path)) = nodes
+				if let Some((_, mut path)) = nodes
 					.iter_mut()
 					.find(|(node_link, ..)| node_link.index == index)
-				else {
+				{
+					*path = GeometryBuilder::build_as(&shapes::Circle {
+						radius: 1.0,
+						center: *node_pos,
+					});
+				} else {
 					commands.spawn((
 						NodeLink { index },
-						PickableBundle::default(),
+						NoDeselect,
+						PickableBundle {
+							focus_policy: FocusPolicy::Block,
+							..default()
+						},
 						ShapeBundle {
-							path: GeometryBuilder::build_as(&shapes::Circle { radius: 1.0, center: *node_pos }),
+							path: GeometryBuilder::build_as(&shapes::Circle {
+								radius: 1.0,
+								center: *node_pos,
+							}),
 							..default()
 						},
 						Fill {
 							options: FillOptions::tolerance(0.05),
-							color: COLOR_NODE_BG
-						}
+							color: COLOR_NODE_BG,
+						},
 					));
 					continue;
-				};
-
-				*path = GeometryBuilder::build_as(&shapes::Circle {
-					radius: 1.0,
-					center: *node_pos,
-				});
+				}
 			}
 			LogicNode::Void => {}
 		}
