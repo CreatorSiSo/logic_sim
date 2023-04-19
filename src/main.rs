@@ -3,6 +3,9 @@ use bevy::{
 	math::{vec2, vec3},
 	prelude::*,
 };
+use bevy_mod_picking::{
+	HoverEvent, PickableBundle, PickingCameraBundle, PickingEvent, SelectionEvent,
+};
 use bevy_prototype_lyon::prelude::*;
 use petgraph::prelude::*;
 
@@ -44,12 +47,15 @@ use sim::{EdgeIndex, Graph, InputNode, LogicNode, NodeIndex};
 fn main() {
 	App::new()
 		.add_plugins(DefaultPlugins)
-		.add_plugin(ShapePlugin)
+		.add_plugin(bevy_prototype_lyon::plugin::ShapePlugin)
+		.add_plugins(bevy_mod_picking::DefaultPickingPlugins)
+		.add_plugin(bevy_mod_picking::DebugEventsPickingPlugin)
+		// Startup
 		.add_startup_system(setup)
-		.add_system(update_cursor)
-		.add_system(update_graph)
-		.add_system(render_nodes)
-		.add_system(render_edges)
+		// Update
+		.add_systems((update_cursor, update_graph, interactions))
+		// Render
+		.add_systems((render_nodes, render_edges))
 		.run();
 }
 
@@ -57,7 +63,7 @@ fn main() {
 struct GraphWrapper(Graph);
 
 #[derive(Component, Debug)]
-struct NodePart {
+struct NodeLink {
 	index: NodeIndex,
 }
 
@@ -80,22 +86,27 @@ struct WorldCursor {
 }
 
 fn setup(mut commands: Commands) {
-	let mut graph = Graph::default();
-	let in_1 = graph.add_node(InputNode::new(false, Vec2::new(0.0, 3.2 + 0.4)).into());
-	let in_2 = graph.add_node(InputNode::new(false, Vec2::new(0.0, 1.0 + 0.2)).into());
-	let in_3 = graph.add_node(InputNode::new(false, Vec2::new(0.0, -1.0 - 0.2)).into());
-	let in_4 = graph.add_node(InputNode::new(false, Vec2::new(0.0, -3.2 - 0.4)).into());
+	{
+		let mut graph = Graph::default();
+		let in_1 = graph.add_node(InputNode::new(false, Vec2::new(0.0, 3.2 + 0.4)).into());
+		let in_2 = graph.add_node(InputNode::new(false, Vec2::new(0.0, 1.0 + 0.2)).into());
+		let in_3 = graph.add_node(InputNode::new(false, Vec2::new(0.0, -1.0 - 0.2)).into());
+		let in_4 = graph.add_node(InputNode::new(false, Vec2::new(0.0, -3.2 - 0.4)).into());
 
-	let node_2 = graph.add_node(LogicNode::Void);
+		let node_2 = graph.add_node(LogicNode::Void);
 
-	graph.add_edge(in_1, node_2, ());
-	graph.add_edge(in_2, node_2, ());
-	graph.add_edge(in_3, node_2, ());
-	graph.add_edge(in_4, node_2, ());
+		graph.add_edge(in_1, node_2, ());
+		graph.add_edge(in_2, node_2, ());
+		graph.add_edge(in_3, node_2, ());
+		graph.add_edge(in_4, node_2, ());
 
-	commands.spawn(GraphWrapper(graph));
+		commands.spawn(GraphWrapper(graph));
+	}
+
+	commands.insert_resource(WorldCursor { pos: None });
 	commands.spawn((
 		MainCamera,
+		PickingCameraBundle::default(),
 		Camera2dBundle {
 			camera_2d: Camera2d {
 				clear_color: ClearColorConfig::Custom(Color::rgb(0.1, 0.1, 0.1)),
@@ -104,8 +115,6 @@ fn setup(mut commands: Commands) {
 			..default()
 		},
 	));
-
-	commands.insert_resource(WorldCursor { pos: None });
 }
 
 fn update_cursor(
@@ -135,28 +144,59 @@ fn update_graph(mut graph: Query<&mut GraphWrapper>) {
 	}
 }
 
+fn interactions(
+	mut events: EventReader<PickingEvent>,
+	mut graph: Query<&mut GraphWrapper>,
+	mut nodes: Query<(&mut NodeLink, &mut Fill)>,
+) {
+	let graph = &mut graph.single_mut().0;
+
+	for event in events.iter() {
+		match event {
+			PickingEvent::Selection(_) => {}
+			PickingEvent::Hover(hover_event) => match hover_event {
+				HoverEvent::JustEntered(entity) => {
+					let (_, mut fill) = nodes.get_mut(*entity).unwrap();
+					fill.color = COLOR_NODE_BG_HOVERED;
+				}
+				HoverEvent::JustLeft(entity) => {
+					// TODO Remove hover_bg only if not active
+					let (_, mut fill) = nodes.get_mut(*entity).unwrap();
+					fill.color = COLOR_NODE_BG;
+				}
+			},
+			PickingEvent::Clicked(entity) => {
+				let (node_link, mut fill) = nodes.get_mut(*entity).unwrap();
+				match graph.node_weight_mut(node_link.index).unwrap() {
+					LogicNode::In(InputNode { state, .. }) => {
+						*state = !*state;
+						fill.color = if *state { COLOR_ACTIVE } else { COLOR_NODE_BG };
+					}
+					LogicNode::Void => {}
+				}
+			}
+		}
+	}
+}
+
 fn render_nodes(
 	mut commands: Commands,
-	world_cursor: Res<WorldCursor>,
-	mouse_buttons: Res<Input<MouseButton>>,
 	mut graph: Query<&mut GraphWrapper>,
-	mut node_sockets: Query<(&mut NodePart, &mut Path, &mut Fill)>,
+	mut nodes: Query<(&mut NodeLink, &mut Path)>,
 ) {
 	let graph = &mut graph.single_mut().0;
 
 	let indices: Vec<NodeIndex> = graph.node_indices().collect();
 	for (weight, index) in graph.node_weights_mut().zip(indices) {
 		match weight {
-			LogicNode::In(InputNode {
-				pos: node_pos,
-				state,
-			}) => {
-				let Some((_, mut path, mut fill)) = node_sockets
+			LogicNode::In(InputNode { pos: node_pos, .. }) => {
+				let Some((_, mut path)) = nodes
 					.iter_mut()
-					.find(|(node_socket, ..)| node_socket.index == index)
+					.find(|(node_link, ..)| node_link.index == index)
 				else {
 					commands.spawn((
-						NodePart { index },
+						NodeLink { index },
+						PickableBundle::default(),
 						ShapeBundle {
 							path: GeometryBuilder::build_as(&shapes::Circle { radius: 1.0, center: *node_pos }),
 							..default()
@@ -173,20 +213,6 @@ fn render_nodes(
 					radius: 1.0,
 					center: *node_pos,
 				});
-
-				let hovered = world_cursor
-					.pos
-					.map_or(false, |cursor_pos| cursor_pos.distance(*node_pos) < 1.0);
-
-				if hovered && mouse_buttons.just_released(MouseButton::Left) {
-					*state = !*state;
-				}
-
-				fill.color = match (*state, hovered) {
-					(true, true) | (true, false) => COLOR_ACTIVE,
-					(false, true) => COLOR_NODE_BG_HOVERED,
-					(false, false) => COLOR_NODE_BG,
-				};
 			}
 			LogicNode::Void => {}
 		}
