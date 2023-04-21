@@ -2,46 +2,13 @@ use bevy::{
 	core_pipeline::clear_color::ClearColorConfig,
 	math::{vec2, vec3},
 	prelude::*,
-	ui::FocusPolicy,
 };
-use bevy_mod_picking::{HoverEvent, NoDeselect, PickableBundle, PickingCameraBundle, PickingEvent};
+use bevy_mod_picking::{HoverEvent, PickingCameraBundle, PickingEvent};
 use bevy_prototype_lyon::prelude::*;
 use petgraph::prelude::*;
 
-mod sim {
-	use bevy::prelude::Vec2;
-	use petgraph::Directed;
-
-	pub type Graph = petgraph::Graph<LogicNode, (), Directed>;
-	pub type NodeIndex = petgraph::graph::NodeIndex;
-	pub type EdgeIndex = petgraph::graph::EdgeIndex;
-
-	#[derive(Debug)]
-	pub enum LogicNode {
-		In(InputNode),
-		Void,
-	}
-
-	impl From<InputNode> for LogicNode {
-		fn from(input_node: InputNode) -> Self {
-			Self::In(input_node)
-		}
-	}
-
-	#[derive(Debug)]
-	pub struct InputNode {
-		pub state: bool,
-		pub pos: Vec2,
-	}
-
-	impl InputNode {
-		pub fn new(state: bool, pos: Vec2) -> Self {
-			Self { state, pos }
-		}
-	}
-}
-
-use sim::{EdgeIndex, Graph, InputNode, LogicNode, NodeIndex};
+mod simulation;
+use simulation::{EdgeIndex, Graph, InputNode, Node, NodeIndex, NodeType};
 
 fn main() {
 	App::new()
@@ -62,7 +29,7 @@ fn main() {
 struct GraphWrapper(Graph);
 
 #[derive(Component, Debug)]
-struct NodeLink {
+struct NodeWrapper {
 	index: NodeIndex,
 }
 
@@ -92,7 +59,7 @@ fn setup(mut commands: Commands) {
 		let in_3 = graph.add_node(InputNode::new(false, Vec2::new(0.0, -1.0 - 0.2)).into());
 		let in_4 = graph.add_node(InputNode::new(false, Vec2::new(0.0, -3.2 - 0.4)).into());
 
-		let node_2 = graph.add_node(LogicNode::Void);
+		let node_2 = graph.add_node(NodeType::Void);
 
 		graph.add_edge(in_1, node_2, ());
 		graph.add_edge(in_2, node_2, ());
@@ -135,10 +102,10 @@ fn update_graph(mut graph: Query<&mut GraphWrapper>) {
 
 	for weight in graph.node_weights_mut() {
 		match weight {
-			LogicNode::In(InputNode { .. }) => {
+			NodeType::In(InputNode { .. }) => {
 				// *pos += Vec2::new(0.1, 0.0);
 			}
-			LogicNode::Void => {}
+			_ => {}
 		}
 	}
 }
@@ -146,15 +113,15 @@ fn update_graph(mut graph: Query<&mut GraphWrapper>) {
 fn interactions(
 	mut events: EventReader<PickingEvent>,
 	mut graph: Query<&mut GraphWrapper>,
-	mut nodes: Query<(&mut NodeLink, &mut Fill)>,
+	mut nodes: Query<(&mut NodeWrapper, &mut Fill)>,
 ) {
 	let graph = &mut graph.single_mut().0;
 
 	fn get_data_mut<'a>(
 		graph: &'a mut Graph,
-		nodes: &'a mut Query<(&mut NodeLink, &mut Fill)>,
+		nodes: &'a mut Query<(&mut NodeWrapper, &mut Fill)>,
 		entity: &Entity,
-	) -> (&'a mut LogicNode, Mut<'a, Fill>) {
+	) -> (&'a mut NodeType, Mut<'a, Fill>) {
 		let (node_link, fill) = nodes.get_mut(*entity).unwrap();
 		(graph.node_weight_mut(node_link.index).unwrap(), fill)
 	}
@@ -169,7 +136,7 @@ fn interactions(
 		PickingEvent::Hover(hover_event) => match hover_event {
 			HoverEvent::JustEntered(entity) => {
 				let (node, mut fill) = get_data_mut(graph, &mut nodes, entity);
-				if let LogicNode::In(InputNode { state, .. }) = node {
+				if let NodeType::In(InputNode { state, .. }) = node {
 					if !*state {
 						fill.color = COLOR_NODE_BG_HOVERED;
 					}
@@ -177,7 +144,7 @@ fn interactions(
 			}
 			HoverEvent::JustLeft(entity) => {
 				let (node, mut fill) = get_data_mut(graph, &mut nodes, entity);
-				if let LogicNode::In(InputNode { state, .. }) = node {
+				if let NodeType::In(InputNode { state, .. }) = node {
 					if !*state {
 						fill.color = COLOR_NODE_BG;
 					}
@@ -186,7 +153,7 @@ fn interactions(
 		},
 		PickingEvent::Clicked(entity) => {
 			let (node, mut fill) = get_data_mut(graph, &mut nodes, entity);
-			if let LogicNode::In(InputNode { state, .. }) = node {
+			if let NodeType::In(InputNode { state, .. }) = node {
 				*state = !*state;
 				fill.color = if *state { COLOR_ACTIVE } else { COLOR_NODE_BG };
 			}
@@ -198,46 +165,19 @@ fn interactions(
 fn render_nodes(
 	mut commands: Commands,
 	mut graph: Query<&mut GraphWrapper>,
-	mut nodes: Query<(&mut NodeLink, &mut Path)>,
+	mut nodes: Query<(&mut NodeWrapper, &mut Path)>,
 ) {
 	let graph = &mut graph.single_mut().0;
 
 	let indices: Vec<NodeIndex> = graph.node_indices().collect();
 	for (weight, index) in graph.node_weights_mut().zip(indices) {
-		match weight {
-			LogicNode::In(InputNode { pos: node_pos, .. }) => {
-				if let Some((_, mut path)) = nodes
-					.iter_mut()
-					.find(|(node_link, ..)| node_link.index == index)
-				{
-					*path = GeometryBuilder::build_as(&shapes::Circle {
-						radius: 1.0,
-						center: *node_pos,
-					});
-				} else {
-					commands.spawn((
-						NodeLink { index },
-						NoDeselect,
-						PickableBundle {
-							focus_policy: FocusPolicy::Block,
-							..default()
-						},
-						ShapeBundle {
-							path: GeometryBuilder::build_as(&shapes::Circle {
-								radius: 1.0,
-								center: *node_pos,
-							}),
-							..default()
-						},
-						Fill {
-							options: FillOptions::tolerance(0.05),
-							color: COLOR_NODE_BG,
-						},
-					));
-					continue;
-				}
-			}
-			LogicNode::Void => {}
+		if let Some((_, mut path)) = nodes
+			.iter_mut()
+			.find(|(node_link, ..)| node_link.index == index)
+		{
+			weight.render(&mut path);
+		} else {
+			weight.init(&mut commands, index);
 		}
 	}
 }
@@ -254,7 +194,7 @@ fn render_edges(
 	let start_indices: Vec<NodeIndex> = graph
 		.node_indices()
 		.zip(graph.node_weights())
-		.filter_map(|(index, node)| matches!(node, LogicNode::In(_)).then_some(index))
+		.filter_map(|(index, node)| matches!(node, NodeType::In(_)).then_some(index))
 		.collect();
 
 	for start_index in start_indices {
@@ -266,8 +206,8 @@ fn render_edges(
 				// let target = graph.node_weight(edge.target()).unwrap();
 
 				let source_pos = match source {
-					LogicNode::In(input_node) => input_node.pos,
-					LogicNode::Void => panic!(),
+					NodeType::In(input_node) => input_node.pos,
+					_ => panic!(),
 				};
 				// let target_pos = match target {
 				// 	LogicNode::In(input_node) => input_node.pos,
