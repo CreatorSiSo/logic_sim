@@ -7,8 +7,12 @@ use bevy_mod_picking::{HoverEvent, PickingCameraBundle, PickingEvent};
 use bevy_prototype_lyon::prelude::*;
 use petgraph::prelude::*;
 
-mod simulation;
-use simulation::{EdgeIndex, Graph, InputNode, Node, NodeIndex, NodeType};
+mod nodes;
+use nodes::{BinaryNode, InputNode, Node, NodeVariant};
+
+pub type Graph = petgraph::Graph<NodeVariant, (), Directed>;
+pub type NodeIndex = petgraph::graph::NodeIndex;
+pub type EdgeIndex = petgraph::graph::EdgeIndex;
 
 fn main() {
 	App::new()
@@ -58,8 +62,9 @@ fn setup(mut commands: Commands) {
 		let in_2 = graph.add_node(InputNode::new(false, Vec2::new(0.0, 1.0 + 0.2)).into());
 		let in_3 = graph.add_node(InputNode::new(false, Vec2::new(0.0, -1.0 - 0.2)).into());
 		let in_4 = graph.add_node(InputNode::new(false, Vec2::new(0.0, -3.2 - 0.4)).into());
+		graph.add_node(BinaryNode::new(Vec2::new(5.0, 0.0)).into());
 
-		let node_2 = graph.add_node(NodeType::Void);
+		let node_2 = graph.add_node(NodeVariant::Void);
 
 		graph.add_edge(in_1, node_2, ());
 		graph.add_edge(in_2, node_2, ());
@@ -102,7 +107,7 @@ fn update_graph(mut graph: Query<&mut GraphWrapper>) {
 
 	for weight in graph.node_weights_mut() {
 		match weight {
-			NodeType::In(InputNode { .. }) => {
+			NodeVariant::In(InputNode { .. }) => {
 				// *pos += Vec2::new(0.1, 0.0);
 			}
 			_ => {}
@@ -121,7 +126,7 @@ fn interactions(
 		graph: &'a mut Graph,
 		nodes: &'a mut Query<(&mut NodeWrapper, &mut Fill)>,
 		entity: &Entity,
-	) -> (&'a mut NodeType, Mut<'a, Fill>) {
+	) -> (&'a mut NodeVariant, Mut<'a, Fill>) {
 		let (node_link, fill) = nodes.get_mut(*entity).unwrap();
 		(graph.node_weight_mut(node_link.index).unwrap(), fill)
 	}
@@ -136,7 +141,7 @@ fn interactions(
 		PickingEvent::Hover(hover_event) => match hover_event {
 			HoverEvent::JustEntered(entity) => {
 				let (node, mut fill) = get_data_mut(graph, &mut nodes, entity);
-				if let NodeType::In(InputNode { state, .. }) = node {
+				if let NodeVariant::In(InputNode { state, .. }) = node {
 					if !*state {
 						fill.color = COLOR_NODE_BG_HOVERED;
 					}
@@ -144,7 +149,7 @@ fn interactions(
 			}
 			HoverEvent::JustLeft(entity) => {
 				let (node, mut fill) = get_data_mut(graph, &mut nodes, entity);
-				if let NodeType::In(InputNode { state, .. }) = node {
+				if let NodeVariant::In(InputNode { state, .. }) = node {
 					if !*state {
 						fill.color = COLOR_NODE_BG;
 					}
@@ -153,7 +158,7 @@ fn interactions(
 		},
 		PickingEvent::Clicked(entity) => {
 			let (node, mut fill) = get_data_mut(graph, &mut nodes, entity);
-			if let NodeType::In(InputNode { state, .. }) = node {
+			if let NodeVariant::In(InputNode { state, .. }) = node {
 				*state = !*state;
 				fill.color = if *state { COLOR_ACTIVE } else { COLOR_NODE_BG };
 			}
@@ -168,16 +173,17 @@ fn render_nodes(
 	mut nodes: Query<(&mut NodeWrapper, &mut Path)>,
 ) {
 	let graph = &mut graph.single_mut().0;
+	let indices = graph.node_indices();
+	let data_indices = graph.node_weights_mut().zip(indices);
 
-	let indices: Vec<NodeIndex> = graph.node_indices().collect();
-	for (weight, index) in graph.node_weights_mut().zip(indices) {
+	for (data, index) in data_indices {
 		if let Some((_, mut path)) = nodes
 			.iter_mut()
 			.find(|(node_link, ..)| node_link.index == index)
 		{
-			weight.render(&mut path);
+			data.render(&mut path);
 		} else {
-			weight.init(&mut commands, index);
+			data.init(&mut commands, index);
 		}
 	}
 }
@@ -194,7 +200,7 @@ fn render_edges(
 	let start_indices: Vec<NodeIndex> = graph
 		.node_indices()
 		.zip(graph.node_weights())
-		.filter_map(|(index, node)| matches!(node, NodeType::In(_)).then_some(index))
+		.filter_map(|(index, node)| matches!(node, NodeVariant::In(_)).then_some(index))
 		.collect();
 
 	for start_index in start_indices {
@@ -206,7 +212,7 @@ fn render_edges(
 				// let target = graph.node_weight(edge.target()).unwrap();
 
 				let source_pos = match source {
-					NodeType::In(input_node) => input_node.pos,
+					NodeVariant::In(input_node) => input_node.pos,
 					_ => panic!(),
 				};
 				// let target_pos = match target {
