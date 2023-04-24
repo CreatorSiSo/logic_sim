@@ -1,4 +1,4 @@
-use crate::{NodeIndex, NodeWrapper};
+use crate::{NodeId, NodeIndex};
 use bevy::prelude::*;
 use bevy_prototype_lyon::prelude::*;
 
@@ -27,7 +27,7 @@ impl Node for NodeVariant {
 			NodeVariant::In(input_node) => input_node.init(commands, index),
 			NodeVariant::Binary(binary_node) => binary_node.init(commands, index),
 			NodeVariant::Void => {
-				commands.spawn(NodeWrapper { index });
+				commands.spawn(NodeId(index));
 			}
 			_ => info!("Not initializing {self:?}"),
 		}

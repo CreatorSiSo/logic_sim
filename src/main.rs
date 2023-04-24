@@ -7,6 +7,7 @@ use bevy_mod_picking::{HoverEvent, PickingCameraBundle, PickingEvent};
 use bevy_prototype_lyon::prelude::*;
 use petgraph::prelude::*;
 
+mod color;
 mod nodes;
 use nodes::{BinaryNode, InputNode, Node, NodeVariant};
 
@@ -33,19 +34,14 @@ fn main() {
 struct GraphWrapper(Graph);
 
 #[derive(Component, Debug)]
-struct NodeWrapper {
-	index: NodeIndex,
-}
-
+struct NodeId(NodeIndex);
 #[derive(Component, Debug)]
 struct EdgePart {
 	index: EdgeIndex,
 }
 
-const COLOR_NODE_BG: Color = Color::rgb(0.2, 0.2, 0.2);
-const COLOR_NODE_BG_HOVERED: Color = Color::rgb(0.15, 0.15, 0.15);
-const COLOR_NODE_BG_FOCUSED: Color = Color::rgb(0.3, 0.3, 0.3);
-const COLOR_ACTIVE: Color = Color::rgb(1.0, 0.1, 0.1);
+const Z_TRANSFORM_NODE: Transform = Transform::from_xyz(0.0, 0.0, 50.0);
+const Z_TRANSFORM_NODE_SOCKET: Transform = Transform::from_xyz(0.0, 0.0, 50.1);
 
 #[derive(Debug, Component)]
 struct MainCamera;
@@ -58,11 +54,11 @@ struct WorldCursor {
 fn setup(mut commands: Commands) {
 	{
 		let mut graph = Graph::default();
-		let in_1 = graph.add_node(InputNode::new(false, Vec2::new(0.0, 3.2 + 0.4)).into());
-		let in_2 = graph.add_node(InputNode::new(false, Vec2::new(0.0, 1.0 + 0.2)).into());
-		let in_3 = graph.add_node(InputNode::new(false, Vec2::new(0.0, -1.0 - 0.2)).into());
-		let in_4 = graph.add_node(InputNode::new(false, Vec2::new(0.0, -3.2 - 0.4)).into());
-		graph.add_node(BinaryNode::new(Vec2::new(5.0, 0.0)).into());
+		let in_1 = graph.add_node(InputNode::new(false, Vec2::new(0.0, 0.0)).into());
+		let in_2 = graph.add_node(InputNode::new(false, Vec2::new(0.0, 10.)).into());
+		let in_3 = graph.add_node(InputNode::new(false, Vec2::new(0.0, 20.)).into());
+		let in_4 = graph.add_node(InputNode::new(false, Vec2::new(0.0, 30.)).into());
+		graph.add_node(BinaryNode::new(Vec2::new(300., 0.), 200., 80.).into());
 
 		let node_2 = graph.add_node(NodeVariant::Void);
 
@@ -80,9 +76,13 @@ fn setup(mut commands: Commands) {
 		PickingCameraBundle { ..default() },
 		Camera2dBundle {
 			camera_2d: Camera2d {
-				clear_color: ClearColorConfig::Custom(Color::rgb(0.1, 0.1, 0.1)),
+				clear_color: ClearColorConfig::Custom(color::BG),
 			},
-			transform: Transform::from_scale(Vec3::new(0.1, 0.1, 1.0)),
+			transform: Transform {
+				translation: vec3(0.0, 0.0, 100.0),
+				scale: Vec3::splat(1.0),
+				..default()
+			},
 			..default()
 		},
 	));
@@ -118,17 +118,17 @@ fn update_graph(mut graph: Query<&mut GraphWrapper>) {
 fn interactions(
 	mut events: EventReader<PickingEvent>,
 	mut graph: Query<&mut GraphWrapper>,
-	mut nodes: Query<(&mut NodeWrapper, &mut Fill)>,
+	mut nodes: Query<(&mut NodeId, &mut Fill)>,
 ) {
 	let graph = &mut graph.single_mut().0;
 
 	fn get_data_mut<'a>(
 		graph: &'a mut Graph,
-		nodes: &'a mut Query<(&mut NodeWrapper, &mut Fill)>,
+		nodes: &'a mut Query<(&mut NodeId, &mut Fill)>,
 		entity: &Entity,
 	) -> (&'a mut NodeVariant, Mut<'a, Fill>) {
-		let (node_link, fill) = nodes.get_mut(*entity).unwrap();
-		(graph.node_weight_mut(node_link.index).unwrap(), fill)
+		let (node_id, fill) = nodes.get_mut(*entity).unwrap();
+		(graph.node_weight_mut(node_id.0).unwrap(), fill)
 	}
 
 	let Some(event) = events.iter().next() else {
@@ -143,7 +143,7 @@ fn interactions(
 				let (node, mut fill) = get_data_mut(graph, &mut nodes, entity);
 				if let NodeVariant::In(InputNode { state, .. }) = node {
 					if !*state {
-						fill.color = COLOR_NODE_BG_HOVERED;
+						fill.color = color::NODE_SOCKET_HOVERED;
 					}
 				}
 			}
@@ -151,7 +151,7 @@ fn interactions(
 				let (node, mut fill) = get_data_mut(graph, &mut nodes, entity);
 				if let NodeVariant::In(InputNode { state, .. }) = node {
 					if !*state {
-						fill.color = COLOR_NODE_BG;
+						fill.color = color::NODE_SOCKET;
 					}
 				}
 			}
@@ -160,7 +160,11 @@ fn interactions(
 			let (node, mut fill) = get_data_mut(graph, &mut nodes, entity);
 			if let NodeVariant::In(InputNode { state, .. }) = node {
 				*state = !*state;
-				fill.color = if *state { COLOR_ACTIVE } else { COLOR_NODE_BG };
+				fill.color = if *state {
+					color::ACTIVE
+				} else {
+					color::NODE_SOCKET
+				};
 			}
 		}
 		_ => {}
@@ -170,17 +174,14 @@ fn interactions(
 fn render_nodes(
 	mut commands: Commands,
 	mut graph: Query<&mut GraphWrapper>,
-	mut nodes: Query<(&mut NodeWrapper, &mut Path)>,
+	mut nodes: Query<(&mut NodeId, &mut Path)>,
 ) {
 	let graph = &mut graph.single_mut().0;
 	let indices = graph.node_indices();
 	let data_indices = graph.node_weights_mut().zip(indices);
 
 	for (data, index) in data_indices {
-		if let Some((_, mut path)) = nodes
-			.iter_mut()
-			.find(|(node_link, ..)| node_link.index == index)
-		{
+		if let Some((_, mut path)) = nodes.iter_mut().find(|(node_id, ..)| node_id.0 == index) {
 			data.render(&mut path);
 		} else {
 			data.init(&mut commands, index);
@@ -231,14 +232,15 @@ fn render_edges(
 						EdgePart { index },
 						ShapeBundle {
 							path: edge_path(source_pos, mouse_pos),
-							transform: Transform::from_translation(vec3(0.0, 0.0, -1.0)),
+							transform: Transform::from_translation(vec3(0.0, 0.0, 1.0)),
 							..default()
 						},
 						Stroke {
 							options: StrokeOptions::DEFAULT
 								.with_line_cap(LineCap::Round)
-								.with_line_width(0.5),
-							color: COLOR_NODE_BG_FOCUSED,
+								.with_line_width(2.5)
+								.with_tolerance(1.0),
+							color: color::EDGE,
 						},
 					));
 					continue;
