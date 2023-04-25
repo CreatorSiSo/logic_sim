@@ -9,7 +9,7 @@ use petgraph::prelude::*;
 
 mod color;
 mod nodes;
-use nodes::{BinaryNode, InputNode, Node, NodeVariant};
+use nodes::{BinaryNode, InputNode, NodeVariant, UiElement};
 
 pub type Graph = petgraph::Graph<NodeVariant, (), Directed>;
 pub type NodeIndex = petgraph::graph::NodeIndex;
@@ -40,8 +40,7 @@ struct EdgePart {
 	index: EdgeIndex,
 }
 
-const Z_TRANSFORM_NODE: Transform = Transform::from_xyz(0.0, 0.0, 50.0);
-const Z_TRANSFORM_NODE_SOCKET: Transform = Transform::from_xyz(0.0, 0.0, 50.1);
+const MAX_Z: f32 = 100.0;
 
 #[derive(Debug, Component)]
 struct MainCamera;
@@ -79,7 +78,7 @@ fn setup(mut commands: Commands) {
 				clear_color: ClearColorConfig::Custom(color::BG),
 			},
 			transform: Transform {
-				translation: vec3(0.0, 0.0, 100.0),
+				translation: vec3(0.0, 0.0, MAX_Z),
 				scale: Vec3::splat(1.0),
 				..default()
 			},
@@ -238,8 +237,7 @@ fn render_edges(
 						Stroke {
 							options: StrokeOptions::DEFAULT
 								.with_line_cap(LineCap::Round)
-								.with_line_width(2.5)
-								.with_tolerance(1.0),
+								.with_line_width(2.5),
 							color: color::EDGE,
 						},
 					));
