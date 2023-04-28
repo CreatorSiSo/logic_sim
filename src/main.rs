@@ -53,20 +53,53 @@ fn zoom_to_scale(zoom: f64) -> f64 {
 #[component]
 pub fn Viewport(cx: Scope) -> impl IntoView {
 	let (zoom, set_zoom) = create_signal(cx, 0.0);
+	let (dragging, set_dragging) = create_signal(cx, false);
+	let (camera_pos, set_camera_pos) = create_signal(cx, (0, 0));
+
+	let class = move || {
+		"w-2/3 h-2/3 relative overflow-hidden select-none text-white bg-gray-900 ".to_string()
+			+ if dragging() {
+				"cursor-grabbing"
+			} else {
+				"cursor-grab"
+			}
+	};
 
 	view! { cx,
 		<div
-			class="w-2/3 h-2/3 relative overflow-hidden select-none text-white bg-gray-900"
+			class=class
 			on:wheel=move |wheel_event| {
 				let delta_y = wheel_event.delta_y() / 132.0;
 				set_zoom.update(|zoom| *zoom += delta_y * ZOOM_SPEED);
 			}
+			on:pointerdown=move |_| set_dragging(true)
+			on:pointerup=move |_| set_dragging(false)
+			on:pointerleave=move |_| set_dragging(false)
+			on:pointermove=move |pointer_event| {
+				if dragging() {
+					set_camera_pos.update(|(x, y)| {
+						*x += pointer_event.movement_x();
+						*y += pointer_event.movement_y();
+					})
+				}
+			}
 		>
 			<div
-				id="camera"
 				class="absolute top-1/2 left-1/2"
-				style=move || format!("transform: scale({})", zoom_to_scale(zoom()))
+				style=move || {
+					let scale = zoom_to_scale(zoom());
+					// TODO Adjust translations to zoom towards mouse position
+					format!(
+						"transform: scale({scale}) translate({}px, {}px)",
+						camera_pos().0 as f64 / scale, camera_pos().1 as f64 / scale
+					)
+				}
 			>
+				<Node
+					inputs=&[true, true]
+					outputs=&[false]
+					position=vec2(-200.0, -200.0)
+				/>
 				<Node
 					inputs=&[false, true]
 					outputs=&[true]
@@ -99,7 +132,7 @@ pub fn Node<'a>(
 
 	view! { cx,
 		<span
-			class="absolute flex flex-col gap-1 py-1 rounded bg-gray-600 border-[3px] border-gray-800 drop-shadow-lg"
+			class="absolute flex flex-col gap-1 py-1 rounded cursor-pointer bg-gray-600 border-[3px] border-gray-800 drop-shadow-lg"
 			style=format!("transform: translate({}px, {}px)", position.x, position.y)
 		>
 			{
