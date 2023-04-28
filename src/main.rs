@@ -1,4 +1,5 @@
 use glam::{vec2, Vec2};
+use log::{debug, info};
 use petgraph::prelude::*;
 
 use leptos::*;
@@ -14,22 +15,71 @@ pub type EdgeIndex = petgraph::graph::EdgeIndex;
 fn main() {
 	_ = console_log::init_with_level(log::Level::Debug);
 	console_error_panic_hook::set_once();
+
 	mount_to_body(|cx| {
-		view! { cx,
-			<div class="w-full h-full relative text-white bg-gray-900">
+		view! { cx, <Viewport/> }
+	})
+}
+
+/// - minus sign to invert zoom direction (scroll forward => zoom in)
+/// - 0.1 to slow down zooming
+const ZOOM_SPEED: f64 = -0.1;
+
+/// Using inverse of log2 for mapping zoom to scale
+///
+/// ## Zoom
+/// - linear, -inf..+inf
+/// - zoom(scale) = log2(scale)
+///
+/// ## Scale
+/// - logarithmic, 0..+inf
+/// - scale(zoom) = 2^(zoom)
+///
+/// ## Examples
+/// ```txt
+/// zoom => scale
+///  4.0 => 16.0
+///  3.0 => 8.0
+///  2.0 => 4.0
+///  1.0 => 2.0
+///  0.0 => 1.0
+/// -1.0 => 0.5
+/// -2.0 => 0.25
+/// ```
+fn zoom_to_scale(zoom: f64) -> f64 {
+	f64::powf(2.0, zoom)
+}
+
+#[component]
+pub fn Viewport(cx: Scope) -> impl IntoView {
+	let (zoom, set_zoom) = create_signal(cx, 0.0);
+
+	view! { cx,
+		<div
+			class="w-2/3 h-2/3 relative overflow-hidden select-none text-white bg-gray-900"
+			on:wheel=move |wheel_event| {
+				let delta_y = wheel_event.delta_y() / 132.0;
+				set_zoom.update(|zoom| *zoom += delta_y * ZOOM_SPEED);
+			}
+		>
+			<div
+				id="camera"
+				class="absolute top-1/2 left-1/2"
+				style=move || format!("transform: scale({})", zoom_to_scale(zoom()))
+			>
 				<Node
-					inputs=&[true, true]
+					inputs=&[false, true]
 					outputs=&[true]
-					position=vec2(100.0, 100.0)
+					position=vec2(0.0, 0.0)
 				/>
 				<Node
-					inputs=&[true, true]
+					inputs=&[true, false]
 					outputs=&[true]
 					position=vec2(200.0, 200.0)
 				/>
 			</div>
-		}
-	})
+		</div>
+	}
 }
 
 #[component]
