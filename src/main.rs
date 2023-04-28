@@ -1,4 +1,5 @@
 use glam::{vec2, Vec2};
+#[allow(unused_imports)]
 use log::{debug, info};
 use petgraph::prelude::*;
 
@@ -74,6 +75,7 @@ pub fn Viewport(cx: Scope) -> impl IntoView {
 			}
 			on:pointerdown=move |_| set_dragging(true)
 			on:pointerup=move |_| set_dragging(false)
+			// TODO Continue panning if mouse leaves viewport
 			on:pointerleave=move |_| set_dragging(false)
 			on:pointermove=move |pointer_event| {
 				if dragging() {
