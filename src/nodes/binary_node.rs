@@ -1,9 +1,6 @@
-use bevy::{math::vec2, prelude::*};
-use bevy_mod_picking::PickableBundle;
-use bevy_prototype_lyon::prelude::*;
-
-use super::{rounded_rect, z_transform, NodeSocket, UiElement};
-use crate::{color, NodeId};
+use super::NodeSocket;
+use glam::Vec2;
+use logic_sim::vec2;
 
 #[derive(Debug)]
 pub struct BinaryNode {
@@ -29,27 +26,27 @@ impl BinaryNode {
 	}
 }
 
-impl UiElement for BinaryNode {
-	fn init(&self, commands: &mut Commands, node_index: crate::NodeIndex) {
-		self.input_1.init(commands, node_index);
-		self.input_2.init(commands, node_index);
-		self.output.init(commands, node_index);
+// impl UiElement for BinaryNode {
+// 	fn init(&self, commands: &mut Commands, node_index: crate::NodeIndex) {
+// 		self.input_1.init(commands, node_index);
+// 		self.input_2.init(commands, node_index);
+// 		self.output.init(commands, node_index);
 
-		commands.spawn((
-			NodeId(node_index),
-			PickableBundle::default(),
-			ShapeBundle {
-				path: rounded_rect(self.center, self.width, self.height, 0.5),
-				transform: z_transform(node_index, 0.0),
-				..default()
-			},
-			Fill {
-				options: FillOptions::tolerance(0.05),
-				color: color::NODE,
-			},
-			Stroke::new(color::NODE_SOCKET, 3.0),
-		));
-	}
+// 		commands.spawn((
+// 			NodeId(node_index),
+// 			PickableBundle::default(),
+// 			ShapeBundle {
+// 				path: rounded_rect(self.center, self.width, self.height, 0.5),
+// 				transform: z_transform(node_index, 0.0),
+// 				..default()
+// 			},
+// 			Fill {
+// 				options: FillOptions::tolerance(0.05),
+// 				color: color::NODE,
+// 			},
+// 			Stroke::new(color::NODE_SOCKET, 3.0),
+// 		));
+// 	}
 
-	fn render(&self, _path: &mut Path) {}
-}
+// 	fn render(&self, _path: &mut Path) {}
+// }

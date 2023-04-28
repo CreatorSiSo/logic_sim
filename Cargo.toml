@@ -6,39 +6,42 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-bevy_mod_picking = "0.12"
-bevy_prototype_lyon = "0.8"
+console_error_panic_hook = "0.1.7"
+console_log = "1.0.0"
+glam = "0.24.0"
+leptos = "0.2.5"
+log = "0.4.17"
 petgraph = "0.6"
 
-[dependencies.bevy]
-version = "0.10"
-default-features = false
-features = [
-	"android_shared_stdcxx",
-	# "animation",
-	# "bevy_animation",
-	"bevy_asset",
-	# "bevy_audio",
-	"bevy_core_pipeline",
-	"bevy_gilrs",
-	# "bevy_gltf",
-	# "bevy_pbr",
-	"bevy_render",
-	"bevy_scene",
-	"bevy_sprite",
-	"bevy_text",
-	"bevy_ui",
-	"bevy_winit",
-	"filesystem_watcher",
-	# "hdr",
-	# "ktx2",
-	# "png",
-	# "tonemapping_luts",
-	# "vorbis",
-	# "x11",
-	"wayland",
-	# "zstd",
-]
+# [dependencies.bevy]
+# version = "0.10"
+# default-features = false
+# features = [
+# 	"android_shared_stdcxx",
+# 	# "animation",
+# 	# "bevy_animation",
+# 	"bevy_asset",
+# 	# "bevy_audio",
+# 	"bevy_core_pipeline",
+# 	"bevy_gilrs",
+# 	# "bevy_gltf",
+# 	# "bevy_pbr",
+# 	"bevy_render",
+# 	"bevy_scene",
+# 	"bevy_sprite",
+# 	"bevy_text",
+# 	"bevy_ui",
+# 	"bevy_winit",
+# 	"filesystem_watcher",
+# 	# "hdr",
+# 	# "ktx2",
+# 	# "png",
+# 	# "tonemapping_luts",
+# 	# "vorbis",
+# 	# "x11",
+# 	"wayland",
+# 	# "zstd",
+# ]
 
 [profile.dev.package."*"]
 opt-level = 3
