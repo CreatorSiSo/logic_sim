@@ -12,6 +12,7 @@ glam = "0.24.0"
 leptos = "0.2.5"
 log = "0.4.17"
 petgraph = "0.6"
+web-sys = "0.3.61"
 
 # [dependencies.bevy]
 # version = "0.10"

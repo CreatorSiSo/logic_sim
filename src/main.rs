@@ -1,4 +1,4 @@
-use glam::{vec2, Vec2};
+use glam::{dvec2, vec2, DVec2};
 #[allow(unused_imports)]
 use log::{debug, info};
 use petgraph::prelude::*;
@@ -8,6 +8,7 @@ use leptos::*;
 // mod color;
 mod nodes;
 use nodes::{BinaryNode, InputNode, NodeVariant};
+use web_sys::HtmlDivElement;
 
 pub type Graph = petgraph::Graph<NodeVariant, (), Directed>;
 pub type NodeIndex = petgraph::graph::NodeIndex;
@@ -53,12 +54,14 @@ fn zoom_to_scale(zoom: f64) -> f64 {
 
 #[component]
 pub fn Viewport(cx: Scope) -> impl IntoView {
-	let (zoom, set_zoom) = create_signal(cx, 0.0);
-	let (dragging, set_dragging) = create_signal(cx, false);
-	let (camera_pos, set_camera_pos) = create_signal(cx, (0, 0));
+	let zoom = create_rw_signal(cx, 0.0);
+	let origin = create_rw_signal(cx, dvec2(800.0, 340.0));
+	let dragging = create_rw_signal(cx, false);
+
+	// let target = event_target::<HtmlDivElement>(&wheel_event);
 
 	let class = move || {
-		"w-2/3 h-2/3 relative overflow-hidden select-none text-white bg-gray-900 ".to_string()
+		"w-full h-full relative overflow-hidden select-none text-white bg-gray-900 ".to_string()
 			+ if dragging() {
 				"cursor-grabbing"
 			} else {
@@ -70,47 +73,58 @@ pub fn Viewport(cx: Scope) -> impl IntoView {
 		<div
 			class=class
 			on:wheel=move |wheel_event| {
-				let delta_y = wheel_event.delta_y() / 132.0;
-				set_zoom.update(|zoom| *zoom += delta_y * ZOOM_SPEED);
+				// zoom in or out
+				let zoom_dir = if wheel_event.delta_y() > 0.0 { 1.0 } else { -1.0 };
+
+				// relative to the origin, not the viewport
+				let mouse_pos = dvec2(wheel_event.offset_x() as f64, wheel_event.offset_y() as f64) - origin();
+
+				let old_scale = zoom_to_scale(zoom());
+				zoom.update(|zoom| *zoom += zoom_dir * ZOOM_SPEED);
+				let scale = zoom_to_scale(zoom());
+
+				// movement of the point at the mouse position due to scaling
+				let diff = mouse_pos / scale - mouse_pos / old_scale;
+				origin.update(|origin| *origin += diff * scale);
+
 			}
-			on:pointerdown=move |_| set_dragging(true)
-			on:pointerup=move |_| set_dragging(false)
-			// TODO Continue panning if mouse leaves viewport
-			on:pointerleave=move |_| set_dragging(false)
 			on:pointermove=move |pointer_event| {
 				if dragging() {
-					set_camera_pos.update(|(x, y)| {
-						*x += pointer_event.movement_x();
-						*y += pointer_event.movement_y();
+					origin.update(|origin| {
+						origin.x += pointer_event.movement_x() as f64;
+						origin.y += pointer_event.movement_y() as f64;
 					})
 				}
 			}
+			on:pointerdown=move |_| dragging.set(true)
+			on:pointerup=move |_| dragging.set(false)
+			// TODO Continue panning if mouse leaves viewport
+			on:pointerleave=move |_| dragging.set(false)
 		>
 			<div
-				class="absolute top-1/2 left-1/2"
+				class="absolute /top-1/2 /left-1/2"
 				style=move || {
 					let scale = zoom_to_scale(zoom());
-					// TODO Adjust translations to zoom towards mouse position
 					format!(
-						"transform: scale({scale}) translate({}px, {}px)",
-						camera_pos().0 as f64 / scale, camera_pos().1 as f64 / scale
+						"transform: scale({}) translate({}px, {}px)",
+						scale, origin().x / scale, origin().y / scale
 					)
 				}
 			>
 				<Node
 					inputs=&[true, true]
 					outputs=&[false]
-					position=vec2(-200.0, -200.0)
+					position=dvec2(-200.0, -200.0)
 				/>
 				<Node
 					inputs=&[false, true]
 					outputs=&[true]
-					position=vec2(0.0, 0.0)
+					position=dvec2(0.0, 0.0)
 				/>
 				<Node
 					inputs=&[true, false]
 					outputs=&[true]
-					position=vec2(200.0, 200.0)
+					position=dvec2(200.0, 200.0)
 				/>
 			</div>
 		</div>
@@ -122,7 +136,7 @@ pub fn Node<'a>(
 	cx: Scope,
 	inputs: &'a [bool],
 	outputs: &'a [bool],
-	position: Vec2,
+	position: DVec2,
 ) -> impl IntoView {
 	let (inputs, _) = create_signal(
 		cx,
@@ -177,11 +191,11 @@ const MAX_Z: f32 = 100.0;
 
 fn setup() -> Graph {
 	let mut graph = Graph::default();
-	let in_1 = graph.add_node(InputNode::new(false, Vec2::new(0.0, 0.0)).into());
-	let in_2 = graph.add_node(InputNode::new(false, Vec2::new(0.0, 10.)).into());
-	let in_3 = graph.add_node(InputNode::new(false, Vec2::new(0.0, 20.)).into());
-	let in_4 = graph.add_node(InputNode::new(false, Vec2::new(0.0, 30.)).into());
-	graph.add_node(BinaryNode::new(Vec2::new(300., 0.), 200., 80.).into());
+	let in_1 = graph.add_node(InputNode::new(false, vec2(0.0, 0.0)).into());
+	let in_2 = graph.add_node(InputNode::new(false, vec2(0.0, 10.)).into());
+	let in_3 = graph.add_node(InputNode::new(false, vec2(0.0, 20.)).into());
+	let in_4 = graph.add_node(InputNode::new(false, vec2(0.0, 30.)).into());
+	graph.add_node(BinaryNode::new(vec2(300., 0.), 200., 80.).into());
 
 	let node_2 = graph.add_node(NodeVariant::Void);
 

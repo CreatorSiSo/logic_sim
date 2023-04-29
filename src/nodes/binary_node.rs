@@ -1,6 +1,5 @@
 use super::NodeSocket;
-use glam::Vec2;
-use logic_sim::vec2;
+use glam::{vec2, Vec2};
 
 #[derive(Debug)]
 pub struct BinaryNode {
